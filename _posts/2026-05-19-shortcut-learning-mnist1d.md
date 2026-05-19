@@ -58,7 +58,7 @@ date: 2026-05-19
 
 </style>
 
-<article class="shortcut-post">
+<article class="shortcut-post" markdown="1">
 
 <p class="lead">
 This control dataset tests whether a model is robust to spurious label-correlated artifacts. By adding artificial markers that correlate with the class label, the dataset creates a controlled "Clever Hans" setting: a model can achieve high accuracy by exploiting the marker, but such behavior would indicate shortcut learning rather than learning the intended visual concept.
