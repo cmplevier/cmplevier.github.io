@@ -5,7 +5,7 @@ date: 2026-05-19
 ---
 
 <style>
-  .shortcut-post {
+  .post-content {
     --ink: #172026;
     --muted: #5e6b73;
     --line: #d9e3e2;
@@ -16,23 +16,23 @@ date: 2026-05-19
     color: var(--ink);
   }
 
-  .shortcut-post .lead {
+  .post-content .lead {
     font-size: 1.18rem;
     line-height: 1.65;
     color: #263238;
     margin-top: 1.1rem;
   }
 
-  .shortcut-post h2 {
+  .post-content h2 {
     margin-top: 2.5rem;
   }
 
-  .shortcut-post figure {
+  .post-content figure {
     margin: 1.65rem 0 2rem;
     padding: 0;
   }
 
-  .shortcut-post figure img {
+  .post-content figure img {
     display: block;
     width: 100%;
     height: auto;
@@ -41,14 +41,14 @@ date: 2026-05-19
     background: var(--paper);
   }
 
-  .shortcut-post figcaption {
+  .post-content figcaption {
     margin-top: 0.65rem;
     color: var(--muted);
     font-size: 0.92rem;
     line-height: 1.45;
   }
 
-  .shortcut-post .takeaway {
+  .post-content .takeaway {
     border-left: 4px solid var(--teal);
     background: #f1f8f7;
     padding: 1rem 1.15rem;
@@ -57,8 +57,6 @@ date: 2026-05-19
   }
 
 </style>
-
-<article class="shortcut-post" markdown="1">
 
 <p class="lead">
 This control dataset tests whether a model is robust to spurious label-correlated artifacts. By adding artificial markers that correlate with the class label, the dataset creates a controlled "Clever Hans" setting: a model can achieve high accuracy by exploiting the marker, but such behavior would indicate shortcut learning rather than learning the intended visual concept.
@@ -132,5 +130,3 @@ To test this shortcut learning behavior, we then performed classification experi
   <img src="{{ '/assets/images/Classifier_results.png' | relative_url }}" alt="Classifier experiment results comparing marked and unmarked training and test datasets">
   <figcaption>Classifier results comparing marked and unmarked training and test datasets.</figcaption>
 </figure>
-
-</article>
