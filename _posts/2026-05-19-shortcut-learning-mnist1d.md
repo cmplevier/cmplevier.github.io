@@ -27,6 +27,10 @@ date: 2026-05-19
     margin-top: 2.5rem;
   }
 
+  .post-content h3 {
+    margin-top: 2rem;
+  }
+
   .post-content figure {
     margin: 1.65rem 0 2rem;
     padding: 0;
@@ -56,77 +60,131 @@ date: 2026-05-19
     color: #213332;
   }
 
+  .post-content .rq {
+    border-left: 4px solid var(--coral);
+    background: #fdf3f3;
+    padding: 1rem 1.15rem;
+    margin: 1.7rem 0;
+    color: #3a2626;
+  }
+
+  .post-content table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.92rem;
+    margin: 1.4rem 0 0.4rem;
+  }
+
+  .post-content th,
+  .post-content td {
+    border: 1px solid var(--line);
+    padding: 0.45rem 0.6rem;
+    text-align: center;
+  }
+
+  .post-content th {
+    background: var(--paper);
+  }
+
+  .post-content td:first-child,
+  .post-content th:first-child {
+    text-align: left;
+  }
+
+  .post-content .table-caption {
+    color: var(--muted);
+    font-size: 0.92rem;
+    line-height: 1.45;
+    margin: 0.4rem 0 2rem;
+  }
 </style>
 
 <p class="lead">
-This control dataset tests whether a model is robust to spurious label-correlated artifacts. By adding artificial markers that correlate with the class label, the dataset creates a controlled "Clever Hans" setting: a model can achieve high accuracy by exploiting the marker, but such behavior would indicate shortcut learning rather than learning the intended visual concept.
+Deep classifiers often reach high accuracy by exploiting an unintended cue that happens to correlate with the label, instead of the feature I actually care about. This failure mode is called <strong>shortcut learning</strong>, and it is dangerous precisely because it is invisible on a standard test set: the model looks accurate until the cue disappears or changes.
 </p>
+
+This blog introduces a **control dataset** for detecting that failure mode. I take MNIST1D and inject a **marker**: a small, fixed signal whose position is determined by the label. Because I build the shortcut myself, I know the ground truth, so any model that relies on the marker can be caught simply by removing or reversing it.
+
+<div class="rq">
+  <strong>Research question.</strong> When trained on marked data, does a classifier learn the digit shape, or does it take the shortcut and learn the marker?
+</div>
+
+**Why a control dataset (and not just another in-the-wild study)?** Prior work (see the background section) already shows shortcut learning is real and damaging in deployed systems. Those studies *discover* the problem; they do not give a cheap, fully controlled way to test whether a specific model or evaluation pipeline is fooled by a shortcut. That is the gap this dataset fills: a lightweight, ground-truth-known probe where the shortcut is planted on purpose, so a single test (reverse the marker) gives a clean yes/no answer to the research question above.
+
+**Code and data.** Dataset generation code: [github.com/cmplevier/toy_dataset_FRMDL](https://github.com/cmplevier/toy_dataset_FRMDL). Blog post code: [github.com/cmplevier/cmplevier.github.io](https://github.com/cmplevier/cmplevier.github.io). Live blog post: [cmplevier.github.io/2026/05/19/shortcut-learning-mnist1d.html](https://cmplevier.github.io/2026/05/19/shortcut-learning-mnist1d.html).
+
+## Background: shortcut learning
+
+A useful overview is given by [Shortcut Learning in Deep Neural Networks](https://arxiv.org/abs/2004.07780), which explains how networks can look successful yet fail under a small distribution shift because they rely on unintended correlations rather than meaningful features.
+
+A classic example is the cow-on-grass case from [Recognition in Terra Incognita](https://arxiv.org/abs/1807.04975): a network learns that "grass" predicts "cow" and then fails on cows photographed elsewhere. The same pattern appears in medical imaging, where a [pneumonia classifier](https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.1002683) and a [COVID-19 classifier](https://doi.org/10.1038/s42256-021-00338-7) learned hospital-specific image artifacts instead of medically meaningful features, and collapsed on scans from unseen hospitals. [Lapuschkin et al.](https://doi.org/10.1038/s41467-019-08987-4) call this "Clever Hans" behaviour: a model that appears competent but secretly relies on an easily identifiable cue that correlates with the label.
+
+In every case the shortcut is only discovered *after* the model fails. A control dataset flips this around: by planting a known marker, I can test for shortcut reliance before trusting any accuracy number.
 
 ## Standard MNIST1D
 
-The standard MNIST1D dataset is a simplified one-dimensional adaptation of the original MNIST handwritten digit dataset. Instead of representing each digit as a 28 x 28 grayscale image, every sample in MNIST1D is encoded as a 40-dimensional sequence of values, forming a small one-dimensional signal. The dataset is synthetically generated from digit-shaped templates inspired by MNIST and then modified with several random transformations such as translation, scaling, added noise, and background patterns. These variations make the classification task nontrivial while remaining computationally lightweight. Like the original MNIST dataset, MNIST1D contains ten classes corresponding to the digits 0 through 9.
-
-Some examples can be seen below.
+MNIST1D is a one-dimensional adaptation of MNIST. Instead of a 28 x 28 grayscale image, each sample is a 40-dimensional signal, synthetically generated from digit-shaped templates and modified with random translation, scaling, noise, and background patterns. These transformations keep the task nontrivial while remaining lightweight. Like MNIST, it has ten classes (digits 0-9). The figure below shows samples; with no marker present, a classifier must use the signal shape.
 
 <figure>
-  <img src="{{ '/assets/images/regular_data.png' | relative_url }}" alt="Examples from the regular MNIST1D dataset shown as one-dimensional digit signals">
-  <figcaption>Regular MNIST1D samples. Each digit is represented as a short one-dimensional signal instead of a two-dimensional image.</figcaption>
+  <img src="{{ '/assets/images/regular_data.png' | relative_url }}" alt="Examples from the standard MNIST1D dataset shown as one-dimensional digit signals">
+  <figcaption>Standard MNIST1D samples. Each digit is a 40-dimensional 1-D signal. No marker is present, so the only usable information is the shape of the signal.</figcaption>
 </figure>
 
-## Adding Label-Correlated Markers
+## Constructing the marked dataset
 
-The adapted data used for testing this property was generated using modified code that adds a marker based on the label. Labels 0-4 have a marker at one location, while labels 5-9 have a marker at another location. Importantly, these markers remain in a constant position for each label group, which can be seen below. This was done by adding 10 additional dimensions to the dataset and placing the marker in the final dimension, making it clearly separated from the original signal.
-
-Some examples can be seen below. Note that the actual marker is not as large as shown in the figures; the square was added purely for visualization purposes.
+I append 10 extra dimensions to each sample and place the marker in the final dimension, keeping it cleanly separated from the original 40-dim signal. The marker position encodes the label group: labels 0-4 get a marker in one location, labels 5-9 in another, and the position is fixed within each group. Because the marker sits at a fixed, label-correlated position, it is far easier to read than the digit shape, so a classifier is strongly incentivised to use it. (Note: the marker is enlarged in the figure below for visibility only.)
 
 <figure>
   <img src="{{ '/assets/images/marked_data.png' | relative_url }}" alt="Marked MNIST1D examples where labels 0 through 4 use one marker position and labels 5 through 9 use another marker position">
-  <figcaption>Marked MNIST1D samples. The original 40 signal dimensions remain intact, while the added marker dimensions create a shortcut that correlates with the label group.</figcaption>
+  <figcaption>Marked MNIST1D samples. The original 40 signal dimensions are unchanged; the appended marker (enlarged here for visibility only) encodes the label group. A classifier can now reach high accuracy by reading the marker alone, ignoring the digit shape.</figcaption>
 </figure>
 
-## Reversed Marker Test
+## The reversed-marker test
 
-For the final testing setup, we also created a dataset which reversed the marker locations, which can be seen below.
+To turn the marker into a yes/no test of shortcut reliance, I create a third dataset in which the marker positions of the two label groups are swapped. The digit signals are identical; only the marker-label relationship is inverted.
 
 <figure>
   <img src="{{ '/assets/images/marked_reversed_data.png' | relative_url }}" alt="Reversed marker MNIST1D examples where the marker positions are swapped between label groups">
-  <figcaption>Reversed-marker samples. The visual digit signal is unchanged in spirit, but the shortcut cue has been swapped between the two label groups.</figcaption>
+  <figcaption>Reversed-marked samples. The digit signals are unchanged, but the marker positions of the two label groups are swapped. A model that learned the shape is unaffected; a model that learned the marker will mislabel almost every sample.</figcaption>
 </figure>
-
-Because the markers are located at fixed positions based on the label, they strongly influence the final training process. The classifiers will likely overfit to the markers instead of learning the features corresponding to the actual digit shapes. This behavior aligns closely with the shortcut learning phenomena described in the literature discussed below.
 
 <div class="takeaway">
-  <strong>Core idea:</strong> if a classifier learns the marker instead of the digit shape, it should perform well when the marker-label relationship is present, but degrade when that relationship is removed or reversed.
+  <strong>Core idea:</strong> a shape-learner should be unaffected by the reversal, whereas a marker-learner should perform well on marked test data but collapse when the marker is reversed.
 </div>
 
-## Shortcut Learning Background
+## Classification experiments
 
-A useful overview of shortcut learning is given by the paper <a href="https://arxiv.org/abs/2004.07780">Shortcut Learning in Deep Neural Networks</a> by Geirhos et al. (2020). The paper explains how deep neural networks can appear superficially successful while failing under slightly different circumstances because they rely on unintended correlations instead of meaningful features.
+I train four classifiers (logistic regression, MLP, CNN, GRU) and compare four conditions, each chosen to isolate one question:
 
-One example discussed is image classification of cows. A neural network may classify cows extremely well during training, yet fail when cows appear outside grassy environments. In this case, the network unintentionally learns that "grass" is a predictor for "cow," instead of learning the shape or appearance of the animal itself. This phenomenon was also explored in <a href="https://arxiv.org/abs/1807.04975">Recognition in Terra Incognita</a> by Beery et al.
+- **Standard → standard:** baseline accuracy with no marker anywhere.
+- **Marked → standard:** does the marker hurt once it is removed at test time?
+- **Marked → marked:** can the model exploit the marker when it is present?
+- **Marked → reversed:** does the model *rely* on the marker?
 
-Another example comes from medical imaging. Zech et al., in <a href="https://journals.plos.org/plosmedicine/article?id=10.1371/journal.pmed.1002683">Variable Generalization Performance of a Deep Learning Model to Detect Pneumonia in Chest Radiographs</a>, demonstrated that a classifier trained on chest X-rays from a number of hospitals performed poorly on scans from unseen hospitals. The model had unintentionally learned to identify hospital-specific imaging characteristics instead of learning features associated with pneumonia itself.
+| Case | Logistic | MLP | CNN | GRU |
+|---|---|---|---|---|
+| Standard train → standard test | 31.5 | 65.8 | 94.4 | 97.6 |
+| Marked train → standard test | 27.5 | 40.5 | 54.5 | 81.1 |
+| Marked train → marked test | 48.1 | 76.6 | 98.1 | 98.6 |
+| Marked train → reversed-marked test | 0.0 | 5.9 | 2.8 | 8.1 |
 
-Shortcut learning typically reveals itself through a discrepancy between the intended and actual learning strategy, often causing unexpected failure when the environment changes. Similar concepts can also be found in fields such as psychology and education.
+<p class="table-caption">Test accuracy (%). Marker-rich models (CNN, GRU) are near perfect on marked test data, drop when the marker is removed, and collapse to near zero when it is reversed: the signature of a model classifying by marker rather than by digit shape.</p>
 
-Shortcuts can be understood as decision rules that exploit unintended features which are often not generalizable. Ideally, a classifier should learn the intended features of the task, such as the shape of an animal or the structure of a handwritten digit.
+The table answers the research question. Models trained on marked data score highest on the marked test (CNN 98.1%, GRU 98.6%), drop when the marker is removed, and collapse to near zero on the reversed test (logistic 0.0%, CNN 2.8%, GRU 8.1%). A model that had learned the digit shape would be unaffected by reversing the marker; the collapse shows these models classified almost entirely by the marker.
 
-These shortcuts are often learned because exploiting them is significantly easier than learning the intended solution. This behavior can be traced back to the inductive bias of both the model and the dataset. Inductive bias refers to the assumptions that influence which solutions are learnable and how readily they can be learned. According to the literature, four important aspects determine inductive bias:
+### Shuffled-input sanity check
 
-- Model architecture and structure
-- Training data and experience
-- Loss function
-- Optimization procedure
+As a final sanity check, I repeated the standard MNIST1D experiment after shuffling the order of the input. Each standard sample is a 40-dimensional 1-D signal, and an input position is simply one slot in that vector (position 1 is the first signal value, position 40 the last). I apply one fixed random permutation to these 40 positions and use the same permutation for both the training and test sets. This reorders the entire signal, scrambling its local left-to-right structure while leaving the set of values unchanged. A fully connected model can still learn from the same values in their new fixed positions, but a CNN or GRU should suffer, because the nearby and sequential relationships they rely on have been destroyed.
 
-The idea of "Clever Hans" behavior is also described in <a href="https://arxiv.org/abs/1902.10178">Clever Hans Predictors and the Importance of Separating Features from Artifacts</a>. In this setting, a model overfits by relying on easily identifiable properties of the data that happen to correlate with the correct labels, but which do not actually represent the intended features. In other words, the model exploits spurious correlations.
+| Case | Logistic | MLP | CNN | GRU |
+|---|---|---|---|---|
+| Standard train → standard test | 31.5 | 65.8 | 94.4 | 97.6 |
+| Shuffled-standard train → shuffled-standard test | 31.5 | 66.2 | 60.5 | 52.8 |
 
-This is closely related to findings from <a href="https://scispace.com/pdf/ai-for-radiographic-covid-19-detection-selects-shortcuts-2oi74y6ji7.pdf">AI for Radiographic COVID-19 Detection Selects Shortcuts</a>. Similar to the pneumonia example, the models learned markers and dataset-specific artifacts instead of medically meaningful features, resulting in a clear performance drop when tested on data from unseen hospital systems. The paper highlights how this issue was present in many high-profile COVID-19 studies that relied on limited and non-representative datasets.
+<p class="table-caption">Sanity-check accuracy (%) after applying one fixed random permutation to the 40-dimensional input. Logistic regression and the MLP are nearly unchanged because they can learn from the same input values in their new fixed positions, while the CNN and GRU drop sharply because the permutation destroys the local and sequential structure of the 1-D signal.</p>
 
-## Classification Experiments
+The results match this interpretation. Logistic regression and the MLP stay almost exactly where they were, because a fixed permutation only changes which weight connects to which input slot. The CNN and GRU, however, fall from 94.4% and 97.6% to 60.5% and 52.8%, showing that their high standard accuracy depends on the ordered structure of MNIST1D. This shuffled experiment is therefore not the main shortcut-learning test; it is an architecture sanity check, while the actual test for marker reliance remains the reversed-marker condition above.
 
-To test this shortcut learning behavior, we then performed classification experiments using both marked and unmarked training and test datasets. The results clearly show that the classifiers fit onto the markers: models trained on marked data performed worse on regular test data than models trained on regular data. This demonstrates that the classifiers relied on the shortcut artifacts instead of learning the intended digit representations.
+## Conclusion
 
-<figure>
-  <img src="{{ '/assets/images/Classifier_results.png' | relative_url }}" alt="Classifier experiment results comparing marked and unmarked training and test datasets">
-  <figcaption>Classifier results comparing marked and unmarked training and test datasets.</figcaption>
-</figure>
+A planted, label-correlated marker is enough to make standard classifiers ignore the digit shape: they look excellent on a same-distribution test set yet score near zero the moment the shortcut is reversed. The take-home message is that a high test accuracy alone does not tell you *why* a model is right. When a spurious cue might exist in real data — a hospital tag, a watermark, a consistent background — a small control dataset like this one, where the shortcut is known by construction, gives a direct test for whether a model is taking it.
